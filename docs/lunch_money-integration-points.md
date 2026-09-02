@@ -49,7 +49,7 @@ Review the following existing registries and SQL dispatch branches when adding
 a provider:
 
 - `ProviderConnectionStatus::PROVIDERS`.
-- `Provider::Metadata::PROVIDERS`.
+- `Provider::Metadata::REGISTRY`.
 - `Transaction::PENDING_PROVIDERS`.
 - The pending-metadata SQL branches in
   `Account::ProviderImportAdapter`.
