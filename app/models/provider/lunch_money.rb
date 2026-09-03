@@ -18,15 +18,56 @@ class Provider::LunchMoney
   class ConfigurationError < Error; end
   class AuthenticationError < Error; end
 
-  attr_reader :access_token
-
   def initialize(access_token:)
     @access_token = access_token
     validate_configuration!
   end
 
-  # TODO: Implement provider-specific API methods
-  # Example methods for banking providers:
+  BASE_URL = "https://api.lunchmoney.dev/v2"
+
+  def get_plaid_accounts
+    get_json("/plaid_accounts")
+  end
+
+  def get_plaid_account(id)
+    get_json("/plaid_accounts/#{ERB::Util.url_encode(id.to_s)}")
+  end
+
+  def get_transactions(plaid_account_id:, updated_since:, limit: 2000, offset: 0)
+    value = updated_since.to_s
+    rfc3339_datetime = /\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})\z/
+    raise ArgumentError, "updated_since must be an RFC3339 datetime" unless value.match?(rfc3339_datetime)
+
+    parsed_updated_since = DateTime.iso8601(value)
+
+    page_offset = offset
+    transactions = []
+    loop do
+      page = get_json("/transactions", query: {
+        plaid_account_id: plaid_account_id.to_s,
+        updated_since: parsed_updated_since.utc.iso8601,
+        include_group_children: true,
+        limit: limit,
+        offset: page_offset
+      })
+      rows = page[:transactions] || page["transactions"] || []
+      raise Error.new("Empty transaction page continued pagination", :pagination_error) if rows.empty? && (page[:has_more] || page["has_more"])
+
+      transactions.concat(rows)
+      break unless page[:has_more] || page["has_more"]
+      page_offset += limit
+    end
+    transactions
+  end
+
+  def trigger_fetch(id: nil)
+    path = id ? "/plaid_accounts/fetch?plaid_account_id=#{ERB::Util.url_encode(id.to_s)}" : "/plaid_accounts/fetch"
+    with_retries("POST #{path}") do
+      response = request(:post, path)
+      return { status: :already_fetching } if response.code.to_i == 425
+      handle_response(response)
+    end
+  end
 
   # def list_accounts
   #   with_retries("list_accounts") do
@@ -65,10 +106,22 @@ class Provider::LunchMoney
 
   private
 
-    RETRYABLE_ERRORS = [
-      SocketError, Net::OpenTimeout, Net::ReadTimeout,
-      Errno::ECONNRESET, Errno::ECONNREFUSED, Errno::ETIMEDOUT, EOFError
-    ].freeze
+    def get_json(path, query: nil)
+      with_retries("GET #{path}") do
+        response = request(:get, path, query: query)
+        handle_response(response)
+      end
+    end
+
+    def request(method, path, query: nil)
+      options = { headers: auth_headers }
+      options[:query] = query if query
+      self.class.public_send(method, "#{BASE_URL}#{path}", options)
+    rescue *NETWORK_ERRORS => e
+      raise e
+    end
+
+    NETWORK_ERRORS = Provider::HttpTransport::TRANSPORT_ERRORS
 
     MAX_RETRIES = 3
     INITIAL_RETRY_DELAY = 2 # seconds
@@ -82,23 +135,20 @@ class Provider::LunchMoney
 
       begin
         yield
-      rescue *RETRYABLE_ERRORS => e
+      rescue JSON::ParserError, *NETWORK_ERRORS, Error => e
         retries += 1
 
-        if retries <= max_retries
-          delay = calculate_retry_delay(retries)
+        retryable = e.is_a?(JSON::ParserError) || !e.is_a?(Error) || e.error_type.in?([:rate_limited, :server_error])
+        if retryable && retries <= max_retries
+          delay = e.respond_to?(:retry_after) && e.retry_after.to_f.positive? ? e.retry_after.to_f : calculate_retry_delay(retries)
           Rails.logger.warn(
-            "LunchMoney API: #{operation_name} failed (attempt #{retries}/#{max_retries}): " \
-            "#{e.class}: #{e.message}. Retrying in #{delay}s..."
+            "LunchMoney API: #{operation_name} failed (attempt #{retries}/#{max_retries}); retrying in #{delay}s"
           )
           sleep(delay)
           retry
         else
-          Rails.logger.error(
-            "LunchMoney API: #{operation_name} failed after #{max_retries} retries: " \
-            "#{e.class}: #{e.message}"
-          )
-          raise Error.new("Network error after #{max_retries} retries: #{e.message}", :network_error)
+            raise e if e.is_a?(Error)
+            raise Error.new("Request failed after #{max_retries} retries", :network_error)
         end
       end
     end
@@ -120,11 +170,11 @@ class Provider::LunchMoney
 
     def handle_response(response)
       case response.code
-      when 200, 201
-        JSON.parse(response.body, symbolize_names: true)
+      when 200, 201, 202
+        body = response.body.to_s
+        body.empty? ? {} : JSON.parse(body, symbolize_names: true)
       when 400
-        Rails.logger.error "LunchMoney API: Bad request - #{response.body}"
-        raise Error.new("Bad request: #{response.body}", :bad_request)
+        raise Error.new("Bad request", :bad_request)
       when 401
         raise AuthenticationError.new("Invalid credentials", :unauthorized)
       when 403
@@ -132,12 +182,14 @@ class Provider::LunchMoney
       when 404
         raise Error.new("Resource not found", :not_found)
       when 429
-        raise Error.new("Rate limit exceeded. Please try again later.", :rate_limited)
+        error = Error.new("Rate limit exceeded. Please try again later.", :rate_limited)
+        error.define_singleton_method(:retry_after) { Integer(response.headers["retry-after"], exception: false) || 0 }
+        raise error
       when 500..599
         raise Error.new("LunchMoney server error (#{response.code}). Please try again later.", :server_error)
       else
-        Rails.logger.error "LunchMoney API: Unexpected response - Code: #{response.code}, Body: #{response.body}"
-        raise Error.new("Unexpected error: #{response.code} - #{response.body}", :unknown)
+        Rails.logger.error "LunchMoney API: Unexpected response - Code: #{response.code}"
+        raise Error.new("Unexpected error: #{response.code}", :unknown)
       end
     end
 end
