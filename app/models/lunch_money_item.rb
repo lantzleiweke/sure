@@ -28,6 +28,10 @@ class LunchMoneyItem < ApplicationRecord
   has_many :lunch_money_accounts, dependent: :destroy
   has_many :accounts, through: :lunch_money_accounts
 
+  def as_json(options = nil)
+    super(options).except("access_token")
+  end
+
   scope :active, -> { where(scheduled_for_deletion: false) }
   scope :ordered, -> { order(created_at: :desc) }
   scope :needs_update, -> { where(status: :requires_update) }

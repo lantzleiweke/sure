@@ -40,7 +40,8 @@ class LunchMoneyAccount::Processor
 
     def update_account_balance(account)
       # Get balance from provider data
-      balance = lunch_money_account.current_balance || 0
+      return if lunch_money_account.current_balance.nil?
+      balance = lunch_money_account.current_balance
 
       # Banking sign convention:
       # - CreditCard and Loan accounts may need sign inversion

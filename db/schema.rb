@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_03_074117) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_03_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -1319,14 +1319,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_074117) do
   create_table "lunch_money_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "account_number"
     t.string "account_status"
+    t.string "account_subtype"
     t.string "account_type"
+    t.boolean "allow_transaction_modifications"
+    t.datetime "balance_last_update"
     t.datetime "created_at", null: false
     t.string "currency"
     t.decimal "current_balance", precision: 19, scale: 4
+    t.string "health_state"
+    t.date "import_start_date"
     t.jsonb "institution_metadata"
+    t.datetime "last_fetch"
+    t.datetime "last_import"
     t.string "lunch_money_account_id"
     t.uuid "lunch_money_item_id", null: false
     t.string "name"
+    t.string "plaid_item_id"
+    t.datetime "plaid_last_successful_update"
     t.string "provider"
     t.jsonb "raw_payload"
     t.jsonb "raw_transactions_payload"
@@ -1340,11 +1349,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_074117) do
     t.text "access_token"
     t.datetime "created_at", null: false
     t.uuid "family_id", null: false
+    t.datetime "full_history_imported_at"
     t.string "institution_color"
     t.string "institution_domain"
     t.string "institution_id"
     t.string "institution_name"
     t.string "institution_url"
+    t.datetime "last_reconciled_at"
     t.string "name"
     t.boolean "pending_account_setup", default: false
     t.jsonb "raw_institution_payload"
@@ -1353,6 +1364,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_074117) do
     t.string "status", default: "good"
     t.datetime "sync_start_date"
     t.datetime "updated_at", null: false
+    t.datetime "updated_since_watermark"
     t.index ["family_id"], name: "index_lunch_money_items_on_family_id"
     t.index ["status"], name: "index_lunch_money_items_on_status"
   end

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class LunchMoneyAccount < ApplicationRecord
+  include PlaidAccount::TypeMappable
   include CurrencyNormalizable
   include LunchMoneyAccount::DataHelpers
 
@@ -47,11 +48,14 @@ class LunchMoneyAccount < ApplicationRecord
     # TODO: Customize this mapping based on your provider's API response
     update!(
       lunch_money_account_id: (data[:id] || data[:account_id])&.to_s,
-      name: data[:name] || data[:account_name],
-      current_balance: parse_decimal(data[:balance] || data[:current_balance]),
+      name: data[:display_name] || data[:name] || data[:account_name],
+      account_number: data[:mask],
+      current_balance: parse_decimal(data.key?(:balance) ? data[:balance] : data[:current_balance]),
       currency: extract_currency(data, fallback: "USD"),
       account_status: data[:status] || data[:account_status],
       account_type: data[:type] || data[:account_type],
+      account_subtype: map_subtype(data[:type] || data[:account_type], data[:subtype]),
+      plaid_item_id: data[:plaid_item_id],
       provider: data[:provider] || data[:brokerage_name],
       institution_metadata: extract_institution_metadata(data),
       raw_payload: account_data
