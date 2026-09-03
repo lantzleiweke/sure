@@ -2,6 +2,17 @@ require "sidekiq/web"
 require "sidekiq/cron/web"
 
 Rails.application.routes.draw do
+  resources :lunch_money_items, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
+    collection do
+      get :preload_accounts
+      get :select_accounts
+    end
+
+    member do
+      post :sync
+      get :setup_accounts
+    end
+  end
   resources :questrade_items, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     collection do
       get :preload_accounts

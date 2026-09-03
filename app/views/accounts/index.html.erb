@@ -100,6 +100,10 @@
       <%= render @questrade_items.sort_by(&:created_at) %>
     <% end %>
 
+    <% if @lunch_money_items.any? %>
+  <%= render @lunch_money_items.sort_by(&:created_at) %>
+<% end %>
+
     <% if @manual_accounts.any? %>
       <div id="manual-accounts">
         <%= render "accounts/index/manual_accounts", accounts: @manual_accounts %>

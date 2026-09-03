@@ -15,7 +15,8 @@ class AccountsController < ApplicationController
           .order(:name)
     @plaid_items = visible_provider_items(family.plaid_items.ordered.with_attached_logo.includes(:plaid_accounts))
     @simplefin_items = visible_provider_items(family.simplefin_items.ordered.with_attached_logo)
-    @lunchflow_items = visible_provider_items(family.lunchflow_items.ordered.with_attached_logo.includes(:lunchflow_accounts))
+     @lunchflow_items = visible_provider_items(family.lunchflow_items.ordered.with_attached_logo.includes(:lunchflow_accounts))
+     @lunch_money_items = visible_provider_items(family.lunch_money_items.ordered.with_attached_logo.includes(:lunch_money_accounts))
     @redbark_items = visible_provider_items(family.redbark_items.ordered.with_attached_logo.includes(:redbark_accounts))
     @akahu_items = visible_provider_items(family.akahu_items.ordered.with_attached_logo.includes(:akahu_accounts))
     @up_items = visible_provider_items(family.up_items.ordered.with_attached_logo.includes(:up_accounts))
@@ -607,6 +608,13 @@ class AccountsController < ApplicationController
       @wise_items.each do |item|
         latest_sync = item.latest_sync_record
         @wise_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+      end
+
+      # Lunch Money sync stats
+      @lunch_money_sync_stats_map = {}
+      @lunch_money_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @lunch_money_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
       end
     end
 end

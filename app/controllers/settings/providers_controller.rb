@@ -191,6 +191,7 @@ class Settings::ProvidersController < ApplicationController
       { key: "akahu",          title: "Akahu",           turbo_id: "akahu",          partial: "akahu_panel" },
       { key: "up",             title: "Up",              turbo_id: "up",             partial: "up_panel" },
       { key: "lunchflow",      title: "Lunch Flow",      turbo_id: "lunchflow",      partial: "lunchflow_panel" },
+      { key: "lunch_money",    title: "Lunch Money",     turbo_id: "lunch_money",    partial: "lunch_money_panel" },
       { key: "redbark",        title: "Redbark",         turbo_id: "redbark",        partial: "redbark_panel" },
       { key: "simplefin",      title: "SimpleFIN",       turbo_id: "simplefin",      partial: "simplefin_panel" },
       { key: "enable_banking", title: "Enable Banking",  turbo_id: "enable_banking", partial: "enable_banking_panel" },
@@ -218,6 +219,7 @@ class Settings::ProvidersController < ApplicationController
       "up"             => "UpItem",
       "simplefin"      => "SimplefinItem",
       "lunchflow"      => "LunchflowItem",
+      "lunch_money"    => "LunchMoneyItem",
       "redbark"        => "RedbarkItem",
       "enable_banking" => "EnableBankingItem",
       "coinstats"      => "CoinstatsItem",
@@ -246,6 +248,8 @@ class Settings::ProvidersController < ApplicationController
         @simplefin_items = Current.family.simplefin_items.ordered
       when "lunchflow"
         @lunchflow_items = Current.family.lunchflow_items.ordered
+      when "lunch_money"
+        @lunch_money_items = Current.family.lunch_money_items.ordered
       when "redbark"
         @redbark_items = Current.family.redbark_items.ordered
       when "enable_banking"
@@ -286,7 +290,8 @@ class Settings::ProvidersController < ApplicationController
       # Load all provider configurations (exclude family-scoped panels, which have their own UI below)
       Provider::Factory.ensure_adapters_loaded
       @provider_configurations = Provider::ConfigurationRegistry.all.reject do |config|
-        FAMILY_PANEL_KEYS.any? { |key| config.provider_key.to_s.casecmp(key).zero? }
+        FAMILY_PANEL_KEYS.any? { |key| config.provider_key.to_s.casecmp(key).zero? } || \
+        config.provider_key.to_s.casecmp("lunch_money").zero?
       end
 
       @akahu_items = Current.family.akahu_items.active.ordered
@@ -311,6 +316,7 @@ class Settings::ProvidersController < ApplicationController
       @kraken_items = Current.family.kraken_items.active.ordered
       @onchain_wallet_items = Current.family.onchain_wallet_items.active.ordered
       @questrade_items = Current.family.questrade_items.active.ordered.select(:id)
+      @lunch_money_items = Current.family.lunch_money_items.ordered.select(:id)
 
       @provider_sync_health = compute_provider_sync_health(family_panel_items)
 
@@ -332,6 +338,7 @@ class Settings::ProvidersController < ApplicationController
         "up"             => @up_items,
         "simplefin"      => @simplefin_items,
         "lunchflow"      => @lunchflow_items,
+        "lunch_money"    => @lunch_money_items,
         "redbark"        => @redbark_items,
         "enable_banking" => @enable_banking_items,
         "coinstats"      => @coinstats_items,
