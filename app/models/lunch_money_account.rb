@@ -12,6 +12,8 @@ class LunchMoneyAccount < ApplicationRecord
   has_one :account, through: :account_provider, source: :account
   has_one :linked_account, through: :account_provider, source: :account
 
+  after_destroy :enqueue_connection_cleanup
+
   validates :name, :currency, presence: true
 
   # Scopes
@@ -20,7 +22,6 @@ class LunchMoneyAccount < ApplicationRecord
   scope :ordered, -> { order(created_at: :desc) }
 
   # Callbacks
-  after_destroy :enqueue_connection_cleanup
 
   # Helper to get account using account_providers system
   def current_account
@@ -86,6 +87,16 @@ class LunchMoneyAccount < ApplicationRecord
     )
   end
 
+  private
+
+    def enqueue_connection_cleanup
+      return unless lunch_money_item
+
+      LunchMoneyConnectionCleanupJob.perform_later(lunch_money_item_id: lunch_money_item.id, account_id: id)
+    end
+
+  public
+
   def upsert_lunch_money_transactions_snapshot!(transactions_snapshot)
     assign_attributes(
       raw_transactions_payload: transactions_snapshot
@@ -102,15 +113,6 @@ class LunchMoneyAccount < ApplicationRecord
         logo: data[:institution_logo] || data.dig(:institution, :logo),
         domain: data[:institution_domain] || data.dig(:institution, :domain)
       }.compact
-    end
-
-    def enqueue_connection_cleanup
-      return unless lunch_money_item
-
-      LunchMoneyConnectionCleanupJob.perform_later(
-        lunch_money_item_id: lunch_money_item.id,
-        account_id: id
-      )
     end
 
     def log_invalid_currency(currency_value)

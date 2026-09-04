@@ -14,7 +14,14 @@ class LunchMoneyItem::Importer
 
   class CredentialsError < StandardError; end
 
+  def reconciliation_deletion_allowed_for?(account)
+    !lunch_money_item.reconcile_deletion_suppressed_account_ids.include?(account.id)
+  end
+
   def import
+    lunch_money_item.reconcile_deletion_suppressed_account_ids.clear
+    @unavailable_balance_account_ids = []
+    lunch_money_item.unavailable_balance_account_ids = @unavailable_balance_account_ids
     Rails.logger.info "LunchMoneyItem::Importer - Starting import for item #{lunch_money_item.id}"
 
     credentials = lunch_money_item.lunch_money_credentials
@@ -60,9 +67,13 @@ class LunchMoneyItem::Importer
     def import_accounts(credentials)
       Rails.logger.info "LunchMoneyItem::Importer - Fetching accounts"
 
-      # TODO: Implement API call to fetch accounts
-      # accounts_data = lunch_money_provider.list_accounts(...)
-      accounts_data = []
+      response = lunch_money_provider.get_plaid_accounts
+      accounts_data = if response.nil? || response.is_a?(Array)
+        response || []
+      else
+        response[:plaid_accounts] || response["plaid_accounts"] || response
+      end
+      accounts_data = Array(accounts_data).map { |account| sdk_object_to_hash(account).with_indifferent_access }
 
       stats["api_requests"] = stats.fetch("api_requests", 0) + 1
       stats["total_accounts"] = accounts_data.size
@@ -72,9 +83,11 @@ class LunchMoneyItem::Importer
 
       accounts_data.each do |account_data|
         begin
+          next if account_data[:type].to_s == "manual"
+          id = account_data[:id] || account_data[:account_id]
+          next if id.blank?
+          upstream_account_ids << id.to_s
           import_account(account_data, credentials)
-          # TODO: Extract account ID from your provider's response format
-          # upstream_account_ids << account_data[:id].to_s if account_data[:id]
         rescue => e
           Rails.logger.error "LunchMoneyItem::Importer - Failed to import account: #{e.message}"
           stats["accounts_skipped"] = stats.fetch("accounts_skipped", 0) + 1
@@ -85,20 +98,41 @@ class LunchMoneyItem::Importer
       persist_stats!
 
       # Clean up accounts that no longer exist upstream
-      prune_removed_accounts(upstream_account_ids)
+      prune_removed_accounts(upstream_account_ids) if upstream_account_ids.any?
     end
 
     def import_account(account_data, credentials)
-      # TODO: Customize based on your provider's account ID field
-      # lunch_money_account_id = account_data[:id].to_s
-      # return if lunch_money_account_id.blank?
-
-      # lunch_money_account = lunch_money_item.lunch_money_accounts.find_or_initialize_by(
-      #   lunch_money_account_id: lunch_money_account_id
-      # )
-
-      # Update from API data
-      # lunch_money_account.upsert_from_lunch_money!(account_data)
+      id = (account_data[:id] || account_data[:account_id]).to_s
+      account = lunch_money_item.lunch_money_accounts.find_or_initialize_by(lunch_money_account_id: id)
+      previous_plaid_item_id = account.plaid_item_id
+      previous_balance = account.current_balance
+      incoming_balance = account_data[:balance]
+      unavailable_balance = incoming_balance.nil? || invalid_balance?(incoming_balance)
+      @unavailable_balance_account_ids ||= []
+      @unavailable_balance_account_ids << account.id if unavailable_balance
+      account.upsert_from_lunch_money!(account_data)
+      if incoming_balance.nil? || invalid_balance?(incoming_balance)
+        account.current_balance = previous_balance
+        account.save!
+        capture_balance_failure(account, incoming_balance)
+      end
+      account.update!(
+        plaid_item_id: account_data[:plaid_item_id],
+        allow_transaction_modifications: account_data[:allow_transaction_modifications],
+        balance_last_update: account_data[:balance_last_update],
+        import_start_date: account_data[:import_start_date],
+        last_fetch: account_data[:last_fetch],
+        last_import: account_data[:last_import],
+        plaid_last_successful_update: account_data[:plaid_last_successful_update],
+        health_state: account.health_state_for_sync.health_state
+      )
+      account.update_columns(current_balance: previous_balance) if incoming_balance.nil? || invalid_balance?(incoming_balance)
+      if previous_plaid_item_id.present? && previous_plaid_item_id != account.plaid_item_id
+        @relink_detected_account_ids ||= []
+        @relink_detected_account_ids << account.id
+        lunch_money_item.reconcile_deletion_suppressed_account_ids << account.id
+        lunch_money_item.update!(status: :requires_update)
+      end
 
       stats["accounts_imported"] = stats.fetch("accounts_imported", 0) + 1
     end
@@ -174,13 +208,28 @@ class LunchMoneyItem::Importer
       return if upstream_account_ids.empty?
 
       # Find accounts that exist locally but not upstream
-      removed = lunch_money_item.lunch_money_accounts
+      removed = lunch_money_item.lunch_money_accounts.without_linked
         .where.not(lunch_money_account_id: upstream_account_ids)
 
       if removed.any?
         Rails.logger.info "LunchMoneyItem::Importer - Pruning #{removed.count} removed accounts"
         removed.destroy_all
       end
+    end
+
+    def invalid_balance?(value)
+      !BigDecimal(value.to_s).finite?
+    rescue ArgumentError, TypeError
+      true
+    end
+
+    def capture_balance_failure(account, value)
+      DebugLogEntry.capture(
+        category: "provider_sync", level: "warn", source: self.class.name,
+        family: lunch_money_item.family, account: account.account, account_provider: account.account_provider,
+        provider_key: "lunch_money", message: "Lunch Money balance was unavailable",
+        metadata: { lunch_money_account_id: account.lunch_money_account_id, reason: value.nil? ? "missing" : "invalid" }
+      )
     end
 
     def register_error(error, **context)

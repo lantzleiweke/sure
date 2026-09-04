@@ -56,6 +56,20 @@ class LunchMoneyAccount::ProcessorTest < ActiveSupport::TestCase
     # assert_equal 15000, @account.balance.to_f
   end
 
+  test "skips balance propagation for an unavailable provider balance" do
+    item = LunchMoneyItem.create!(family: @family, name: "Lunch Money", access_token: "token")
+    provider_account = item.lunch_money_accounts.create!(name: "Provider", currency: "USD", current_balance: 10)
+    provider_account.ensure_account_provider!(@account)
+    @account.set_current_balance(10000)
+    provider_account.update!(raw_transactions_payload: [])
+
+    LunchMoneyAccount::Transactions::Processor.any_instance.stubs(:process).returns({ success: true })
+    LunchMoneyAccount::Processor.new(provider_account, unavailable_balance_account_ids: [provider_account.id]).process
+
+    assert_equal 10000, @account.reload.balance
+    assert_equal 10000, @account.balance
+  end
+
   # ==========================================================================
   # TransactionsProcessor tests
   # ==========================================================================

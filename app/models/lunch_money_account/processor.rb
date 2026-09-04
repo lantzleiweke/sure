@@ -5,8 +5,9 @@ class LunchMoneyAccount::Processor
 
   attr_reader :lunch_money_account
 
-  def initialize(lunch_money_account)
+  def initialize(lunch_money_account, unavailable_balance_account_ids: [])
     @lunch_money_account = lunch_money_account
+    @unavailable_balance_account_ids = unavailable_balance_account_ids
   end
 
   def process
@@ -39,6 +40,8 @@ class LunchMoneyAccount::Processor
   private
 
     def update_account_balance(account)
+      return if @unavailable_balance_account_ids.include?(lunch_money_account.id)
+
       # Get balance from provider data
       return if lunch_money_account.current_balance.nil?
       balance = lunch_money_account.current_balance

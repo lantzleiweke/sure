@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class LunchMoneyItem < ApplicationRecord
+  attr_accessor :reconcile_deletion_suppressed_account_ids
+  attr_accessor :unavailable_balance_account_ids
   include Syncable, Provided, Unlinking
 
   enum :status, { good: "good", requires_update: "requires_update" }, default: :good
@@ -40,6 +42,10 @@ class LunchMoneyItem < ApplicationRecord
   # whole nightly family sync, not just this provider.
   scope :syncable, -> { active }
 
+  def reconcile_deletion_suppressed_account_ids
+    @reconcile_deletion_suppressed_account_ids ||= []
+  end
+
   def syncer
     LunchMoneyItem::Syncer.new(self)
   end
@@ -65,13 +71,13 @@ class LunchMoneyItem < ApplicationRecord
   end
 
   # Process linked accounts after data import
-  def process_accounts
+  def process_accounts(unavailable_balance_account_ids: self.unavailable_balance_account_ids || [])
     return [] if lunch_money_accounts.empty?
 
     results = []
     linked_lunch_money_accounts.includes(account_provider: :account).each do |lunch_money_account|
       begin
-        result = LunchMoneyAccount::Processor.new(lunch_money_account).process
+        result = LunchMoneyAccount::Processor.new(lunch_money_account, unavailable_balance_account_ids: unavailable_balance_account_ids).process
         results << { lunch_money_account_id: lunch_money_account.id, success: true, result: result }
       rescue => e
         Rails.logger.error "LunchMoneyItem #{id} - Failed to process account #{lunch_money_account.id}: #{e.message}"
