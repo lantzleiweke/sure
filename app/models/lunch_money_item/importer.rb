@@ -150,13 +150,13 @@ class LunchMoneyItem::Importer
         start_date = calculate_transaction_start_date(lunch_money_account)
         end_date = Date.current
 
-        # TODO: Implement API call to fetch transactions
-        # transactions_data = lunch_money_provider.get_transactions(
-        #   account_id: lunch_money_account.lunch_money_account_id,
-        #   start_date: start_date,
-        #   end_date: end_date
-        # )
-        transactions_data = []
+        cursor = (lunch_money_item.updated_since_watermark || Time.current).utc - 24.hours
+        transactions_data = lunch_money_provider.get_transactions(
+          plaid_account_id: lunch_money_account.lunch_money_account_id,
+          updated_since: cursor.utc.iso8601,
+          limit: 2000,
+          offset: 0
+        )
 
         stats["api_requests"] = stats.fetch("api_requests", 0) + 1
 
@@ -167,9 +167,11 @@ class LunchMoneyItem::Importer
           lunch_money_account.upsert_lunch_money_transactions_snapshot!(merged)
           stats["transactions_found"] = stats.fetch("transactions_found", 0) + transactions_data.size
         end
+        stats["delete_pending"] = stats.fetch("delete_pending", 0) + transactions_data.count { |transaction| sdk_object_to_hash(transaction).with_indifferent_access[:status] == "delete_pending" }
       rescue => e
         Rails.logger.warn "LunchMoneyItem::Importer - Failed to fetch transactions: #{e.message}"
         register_error(e, context: "transactions", account_id: lunch_money_account.id)
+        raise
       end
     end
 

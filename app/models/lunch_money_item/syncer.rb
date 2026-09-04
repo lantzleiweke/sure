@@ -40,7 +40,8 @@ class LunchMoneyItem::Syncer
     end
 
     # Mark sync health
-    collect_health_stats(sync, errors: nil)
+      collect_health_stats(sync, errors: nil)
+      lunch_money_item.update!(updated_since_watermark: Time.current.utc)
   rescue Provider::LunchMoney::AuthenticationError => e
     lunch_money_item.update!(status: :requires_update)
     collect_health_stats(sync, errors: [ { message: e.message, category: "auth_error" } ])

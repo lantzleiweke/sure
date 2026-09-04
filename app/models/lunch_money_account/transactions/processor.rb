@@ -20,12 +20,25 @@ class LunchMoneyAccount::Transactions::Processor
 
     imported_count = 0
     failed_count = 0
+    skipped_count = 0
+    skipped_parent_count = 0
+    skipped_pending_count = 0
+    skipped_delete_pending_count = 0
     errors = []
 
     # Each entry is processed inside a transaction, but to avoid locking up the DB when
     # there are hundreds or thousands of transactions, we process them individually.
     lunch_money_account.raw_transactions_payload.each_with_index do |transaction_data, index|
       begin
+        data = transaction_data.with_indifferent_access
+        if data[:is_group_parent] || data[:is_split_parent] || data[:is_pending] || data[:status] == "delete_pending"
+          skipped_count += 1
+          skipped_parent_count += 1 if data[:is_group_parent] || data[:is_split_parent]
+          skipped_pending_count += 1 if data[:is_pending]
+          skipped_delete_pending_count += 1 if data[:status] == "delete_pending"
+          errors << { index: index, transaction_id: data[:id] || "unknown", error: data[:status] == "delete_pending" ? "delete_pending" : "Skipped" }
+          next
+        end
         result = process_transaction(transaction_data)
 
         if result.nil?
@@ -59,6 +72,10 @@ class LunchMoneyAccount::Transactions::Processor
       total: total_count,
       imported: imported_count,
       failed: failed_count,
+      skipped: skipped_count,
+      skipped_parents: skipped_parent_count,
+      skipped_pending: skipped_pending_count,
+      skipped_delete_pending: skipped_delete_pending_count,
       errors: errors
     }
 
@@ -99,17 +116,17 @@ class LunchMoneyAccount::Transactions::Processor
       date = parse_date(data[:date] || data[:transaction_date] || data[:posted_at], family: account&.family)
       return nil if date.nil?
 
-      name = data[:name] || data[:description] || data[:merchant_name] || "Transaction"
+      name = data[:payee] || data[:name] || data[:description] || data[:merchant_name] || "Transaction"
       currency = extract_currency(data, fallback: account.currency)
 
       # Build provider-specific metadata for transaction.extra
       extra = build_extra_metadata(data)
 
-      Rails.logger.info "LunchMoneyAccount::Transactions::Processor - Importing transaction: id=#{external_id} amount=#{amount} date=#{date}"
+      Rails.logger.info "LunchMoneyAccount::Transactions::Processor - Importing transaction: id=#{external_id}"
 
       # Use ProviderImportAdapter for proper deduplication via external_id + source
       import_adapter.import_transaction(
-        external_id: external_id,
+        external_id: "lunch_money_#{external_id}",
         amount: amount,
         currency: currency,
         date: date,
@@ -123,25 +140,17 @@ class LunchMoneyAccount::Transactions::Processor
       amount = parse_decimal(data[:amount])
       return nil if amount.nil?
 
-      # TODO: Adjust sign convention based on your provider
+      # Lunch Money uses positive debits and negative credits; Sure inverts this.
       # Most banking APIs use positive amounts for debits (money out)
       # and negative amounts for credits (money in)
       # Sure convention: positive = money out, negative = money in
       #
       # If your provider uses the opposite convention, negate the amount:
       # amount = -amount
-      amount
+      -amount
     end
 
     def build_extra_metadata(data)
-      # TODO: Customize which fields to store based on your provider
-      {
-        "lunch_money" => {
-          "id" => data[:id] || data[:transaction_id],
-          "pending" => data[:pending] || data[:is_pending],
-          "merchant" => data[:merchant] || data[:merchant_name],
-          "category" => data[:category]
-        }.compact
-      }
+      { "original_name" => data[:original_name], "merchant" => data[:merchant] || data[:merchant_name], "to_base" => data[:to_base] }.compact
     end
 end

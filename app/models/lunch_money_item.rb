@@ -78,10 +78,12 @@ class LunchMoneyItem < ApplicationRecord
     linked_lunch_money_accounts.includes(account_provider: :account).each do |lunch_money_account|
       begin
         result = LunchMoneyAccount::Processor.new(lunch_money_account, unavailable_balance_account_ids: unavailable_balance_account_ids).process
+        raise "Lunch Money transaction processing failed" unless result[:success]
         results << { lunch_money_account_id: lunch_money_account.id, success: true, result: result }
       rescue => e
         Rails.logger.error "LunchMoneyItem #{id} - Failed to process account #{lunch_money_account.id}: #{e.message}"
         results << { lunch_money_account_id: lunch_money_account.id, success: false, error: e.message }
+        raise
       end
     end
 

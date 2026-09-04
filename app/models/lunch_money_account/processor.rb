@@ -12,7 +12,7 @@ class LunchMoneyAccount::Processor
 
   def process
     account = lunch_money_account.current_account
-    return unless account
+    return { success: false, transactions_processed: false } unless account
 
     Rails.logger.info "LunchMoneyAccount::Processor - Processing account #{lunch_money_account.id} -> Sure account #{account.id}"
 
@@ -23,18 +23,19 @@ class LunchMoneyAccount::Processor
     transactions_count = lunch_money_account.raw_transactions_payload&.size || 0
     Rails.logger.info "LunchMoneyAccount::Processor - Transactions payload has #{transactions_count} items"
 
-    if lunch_money_account.raw_transactions_payload.present?
+    transaction_result = if lunch_money_account.raw_transactions_payload.present?
       Rails.logger.info "LunchMoneyAccount::Processor - Processing transactions..."
       LunchMoneyAccount::Transactions::Processor.new(lunch_money_account).process
     else
       Rails.logger.warn "LunchMoneyAccount::Processor - No transactions payload to process"
+      { success: true, total: 0, imported: 0, failed: 0, errors: [] }
     end
 
     # Trigger immediate UI refresh so entries appear in the activity feed
     account.broadcast_sync_complete
     Rails.logger.info "LunchMoneyAccount::Processor - Broadcast sync complete for account #{account.id}"
 
-    { transactions_processed: transactions_count > 0 }
+    transaction_result.merge(transactions_processed: transactions_count > 0)
   end
 
   private
