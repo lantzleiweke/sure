@@ -19,10 +19,10 @@ en:
     # Syncer status messages
     sync:
       status:
-        importing: "Importing accounts from LunchMoney..."
+        importing: "Importing available Lunch Money data..."
         processing: "Processing transactions..."
         calculating: "Calculating balances..."
-        importing_data: "Importing account data..."
+        importing_data: "Importing available account data..."
         checking_setup: "Checking account configuration..."
         needs_setup: "%{count} accounts need setup..."
       success: "Sync started"
@@ -92,18 +92,18 @@ en:
         other: "%{count} more accounts available"
       no_accounts_description: "This connection has no linked accounts yet."
       no_accounts_title: "No accounts"
-      provider_name: "LunchMoney"
-      requires_update: "Connection needs update"
+      provider_name: "Lunch Money · data import"
+      requires_update: "Update access token"
       setup_action: "Set Up New Accounts"
       setup_description: "%{linked} of %{total} accounts linked. Choose account types for your newly imported LunchMoney accounts."
       setup_needed: "New accounts ready to set up"
-      status: "Synced %{timestamp} ago"
-      status_never: "Never synced"
-      status_with_summary: "Last synced %{timestamp} ago - %{summary}"
-      syncing: "Syncing..."
+      status: "Import completed %{timestamp} ago"
+      status_never: "No import completed yet"
+      status_with_summary: "Import completed %{timestamp} ago · %{summary}"
+      syncing: "Importing available Lunch Money data..."
       total: "Total"
       unlinked: "Unlinked"
-      update_credentials: "Update credentials"
+      update_credentials: "Update token"
 
     # Select accounts view
     select_accounts:
