@@ -26,11 +26,13 @@ module LunchMoneyAccount::DataHelpers
 
       case value
       when BigDecimal
-        value
+        value if value.finite?
       when String
-        BigDecimal(value)
+        decimal = BigDecimal(value)
+        decimal if decimal.finite?
       when Numeric
-        BigDecimal(value.to_s)
+        decimal = BigDecimal(value.to_s)
+        decimal if decimal.finite?
       else
         nil
       end

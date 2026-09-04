@@ -1,6 +1,10 @@
 require "test_helper"
 
 class LunchMoneyAccountTest < ActiveSupport::TestCase
+  test "restores the connection cleanup callback" do
+    assert LunchMoneyAccount.private_instance_methods.include?(:enqueue_connection_cleanup)
+    assert defined?(LunchMoneyConnectionCleanupJob)
+  end
   setup do
     @item = LunchMoneyItem.create!(family: families(:empty), name: "Lunch Money", access_token: "token")
   end
