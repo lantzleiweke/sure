@@ -60,6 +60,30 @@ class LunchMoneyAccount < ApplicationRecord
       institution_metadata: extract_institution_metadata(data),
       raw_payload: account_data
     )
+    apply_health!(status: data[:status] || data[:account_status], balance_last_update: data[:balance_last_update])
+  end
+
+  def apply_health!(status:, balance_last_update: nil, provider_failure: nil)
+    return unless persisted?
+
+    self.account_status = status
+    self.balance_last_update = balance_last_update if respond_to?(:balance_last_update=)
+    mapper = LunchMoney::AccountStatusMapper.new(account_status: status, balance_last_update: balance_last_update, provider_failure: provider_failure)
+    update!(account_status: status, balance_last_update: balance_last_update, health_state: mapper.health_state)
+    lunch_money_item.update!(status: :requires_update) if mapper.item_requires_update?
+  end
+
+  def reconnect_message
+    LunchMoney::AccountStatusMapper.new(account_status: account_status).actionable_message
+  end
+
+  def health_state_for_sync(sync_succeeded: false, provider_failure: nil)
+    LunchMoney::AccountStatusMapper.new(
+      account_status: account_status,
+      balance_last_update: balance_last_update,
+      sync_succeeded: sync_succeeded,
+      provider_failure: provider_failure
+    )
   end
 
   def upsert_lunch_money_transactions_snapshot!(transactions_snapshot)

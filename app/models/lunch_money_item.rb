@@ -176,4 +176,8 @@ class LunchMoneyItem < ApplicationRecord
   def credentials_configured?
     access_token.present?
   end
+
+  def mark_requires_update!
+    update!(status: :requires_update)
+  end
 end
